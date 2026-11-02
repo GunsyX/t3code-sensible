@@ -206,8 +206,7 @@ interface ComposerSendInput {
   readonly isDraftHeroState: boolean;
   readonly panelAnimationsActive: boolean;
   readonly panelAnimationDurationMs: number;
-  readonly keepFullHistory: boolean;
-  readonly resumeCompactionTokens: number | null;
+  readonly handsOffOnSend: boolean;
   readonly showPlanFollowUpPrompt: boolean;
   readonly usageLimitsKey: string | null;
   readonly usageLimitsOffered: boolean;
@@ -237,7 +236,7 @@ interface ComposerSendInput {
     SetStateAction<Record<string, ReadonlyArray<CodexFeedbackSubmission>>>
   >;
   readonly setThreadError: ReturnType<typeof makeThreadErrorSetter>;
-  readonly setKeepFullHistory: (threadKey: string, keep: boolean) => void;
+  readonly clearHandoffChoice: (threadKey: string) => void;
   readonly anchorNewTurn: TimelineFollow["anchorNewTurn"];
   readonly acknowledgeActiveThreadWoke: () => void;
   readonly handleInteractionModeChange: (mode: ProviderInteractionMode) => void;
@@ -301,8 +300,7 @@ export function useComposerSend(input: ComposerSendInput) {
     isDraftHeroState,
     panelAnimationsActive,
     panelAnimationDurationMs,
-    keepFullHistory,
-    resumeCompactionTokens,
+    handsOffOnSend,
     showPlanFollowUpPrompt,
     usageLimitsKey,
     usageLimitsOffered,
@@ -326,7 +324,7 @@ export function useComposerSend(input: ComposerSendInput) {
     optimisticBlobPreviews,
     setFeedbackSubmissionsByThreadKey,
     setThreadError,
-    setKeepFullHistory,
+    clearHandoffChoice,
     anchorNewTurn,
     acknowledgeActiveThreadWoke,
     handleInteractionModeChange,
@@ -866,7 +864,7 @@ export function useComposerSend(input: ComposerSendInput) {
     const {
       missingWorktreeBaseBranch,
       baseBranchForWorktree,
-      compactBeforeSend,
+      freshHandoff,
       turnDispatchMode,
       shouldQueueBehindActiveRun,
     } = planComposerTurn({
@@ -877,8 +875,7 @@ export function useComposerSend(input: ComposerSendInput) {
       sendEnvMode,
       worktreePath: activeThread.worktreePath,
       activeThreadBranch,
-      resumeCompactionTokens,
-      keepFullHistory,
+      handsOffOnSend,
       phase,
       dispatchMode,
     });
@@ -1285,28 +1282,6 @@ export function useComposerSend(input: ComposerSendInput) {
       failure = turnAttachmentsResult;
     }
 
-    if (failure === null && compactBeforeSend) {
-      const compactResult = await startThreadTurn({
-        environmentId,
-        input: {
-          threadId: threadIdForSend,
-          message: {
-            messageId: newMessageId(),
-            role: "user",
-            text: "/compact",
-            attachments: [],
-            idleCompaction: "onReturn",
-          },
-          modelSelection: ctxSelectedModelSelection,
-          runtimeMode,
-          interactionMode: sendInteractionMode,
-        },
-      });
-      if (compactResult._tag === "Failure") {
-        failure = compactResult;
-      }
-    }
-
     let backgroundDraftOpened = false;
     let turnStartSucceeded = false;
     if (failure === null && turnAttachmentsResult._tag === "Success") {
@@ -1360,6 +1335,7 @@ export function useComposerSend(input: ComposerSendInput) {
             }),
           },
           modelSelection: ctxSelectedModelSelection,
+          ...(freshHandoff ? { freshHandoff: true } : {}),
           titleSeed: title,
           runtimeMode,
           interactionMode: sendInteractionMode,
@@ -1396,7 +1372,7 @@ export function useComposerSend(input: ComposerSendInput) {
         failure = startResult;
       } else {
         turnStartSucceeded = true;
-        setKeepFullHistory(routeThreadKey, false);
+        clearHandoffChoice(routeThreadKey);
         clearUsageLimitsFor(routeThreadKey);
         if (turnUsesAttachmentUploads) {
           releaseDraftAttachments(composerAttachmentsSnapshot);

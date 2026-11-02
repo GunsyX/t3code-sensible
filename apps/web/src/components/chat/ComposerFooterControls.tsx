@@ -281,9 +281,11 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
   onCompactContext?: (() => void) | undefined;
   compactDisabled: boolean;
   compactDisabledReason: string | null;
-  compactBeforeSendTokens: number | null;
-  keepFullHistory: boolean;
-  onToggleKeepFullHistory: () => void;
+  handoffAvailable: boolean;
+  handoffTokens: number | null;
+  handoffStale: boolean;
+  handsOffOnSend: boolean;
+  onToggleHandoff: () => void;
 }) {
   return (
     <>
@@ -322,9 +324,11 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
         onPreviousPendingQuestion={props.onPreviousPendingQuestion}
         onInterrupt={props.onInterrupt}
         onImplementPlanInNewThread={props.onImplementPlanInNewThread}
-        compactBeforeSendTokens={props.compactBeforeSendTokens}
-        keepFullHistory={props.keepFullHistory}
-        onToggleKeepFullHistory={props.onToggleKeepFullHistory}
+        handoffAvailable={props.handoffAvailable}
+        handoffTokens={props.handoffTokens}
+        handoffStale={props.handoffStale}
+        handsOffOnSend={props.handsOffOnSend}
+        onToggleHandoff={props.onToggleHandoff}
       />
     </>
   );

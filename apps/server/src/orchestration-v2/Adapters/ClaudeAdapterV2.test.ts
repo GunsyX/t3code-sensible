@@ -71,7 +71,6 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import { Tool } from "effect/ai";
-import { formatClaudeResumeCompactionQuestion } from "@t3tools/shared/claudeCompaction";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 import { SpawnExecutableResolution } from "@t3tools/shared/shell";
@@ -1727,34 +1726,6 @@ describe("ClaudeAdapterV2 resume compaction", () => {
             assert.equal(planEvent.value.plan.markdown, longPlan.trim());
           }
         }
-        const requestEvent = yield* runtime.events.pipe(
-          Stream.filter((event) => event.type === "runtime_request.updated"),
-          Stream.runHead,
-          Effect.forkScoped,
-        );
-        const signal = yield* Effect.abortSignal;
-        const dialog = yield* Effect.promise(() =>
-          callback!(
-            {
-              dialogKind: "resume_return",
-              payload: { sessionAgeMinutes: 90, estimatedTokens: 120000 },
-            },
-            { signal, requestId: "dialog-resume-1" },
-          ),
-        ).pipe(Effect.forkScoped);
-        const event = yield* Fiber.join(requestEvent);
-        assert.isTrue(Option.isSome(event));
-        if (Option.isNone(event) || event.value.type !== "runtime_request.updated") return;
-        const question = formatClaudeResumeCompactionQuestion({
-          ageMinutes: 90,
-          estimatedTokens: 120000,
-        });
-        yield* runtime.respondToRuntimeRequest({
-          requestId: event.value.runtimeRequest.id,
-          answers: { [question]: "Compact and continue" },
-        });
-        assert.deepEqual(yield* Fiber.join(dialog), { behavior: "completed", result: "compact" });
-
         assert.deepEqual(
           yield* Effect.promise(() =>
             callback!(
@@ -1762,10 +1733,10 @@ describe("ClaudeAdapterV2 resume compaction", () => {
                 dialogKind: "resume_return",
                 payload: { sessionAgeMinutes: 90, estimatedTokens: 120000 },
               },
-              { signal: AbortSignal.abort(), requestId: "dialog-resume-2" },
+              { signal: new AbortController().signal, requestId: "dialog-resume-1" },
             ),
           ),
-          { behavior: "cancelled" },
+          { behavior: "completed", result: "continue" },
         );
       }).pipe(
         Effect.provide(
@@ -5533,22 +5504,6 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             { signal: new AbortController().signal, requestId: "dialog-resume" },
           ),
         ).pipe(Effect.forkScoped);
-        const request = yield* Queue.take(harness.runtimeRequestReceipts);
-        assert.deepEqual(
-          harness.events.flatMap((event) =>
-            event.type === "node.updated" && event.node.id === request.runtimeRequest.nodeId
-              ? [event.node.parentNodeId]
-              : [],
-          ),
-          [NodeId.make("node-attempt-resume-dialog")],
-        );
-        yield* harness.runtime.respondToRuntimeRequest({
-          requestId: request.runtimeRequest.id,
-          answers: {
-            [formatClaudeResumeCompactionQuestion({ ageMinutes: 90, estimatedTokens: 120000 })]:
-              "Keep full history",
-          },
-        });
         assert.deepEqual(yield* Fiber.join(dialog), { behavior: "completed", result: "continue" });
         yield* Queue.offer(
           harness.sdkMessages,
