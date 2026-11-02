@@ -66,6 +66,7 @@ export function useComposerMenuItems({
   planModeUiEnabled,
   sideChatAvailable,
   sideChatDisabledReason,
+  handoffAvailable,
   compactSlashCommandAvailable,
   selectedProvider,
   selectedProviderSkills,
@@ -84,6 +85,7 @@ export function useComposerMenuItems({
   readonly planModeUiEnabled: boolean;
   readonly sideChatAvailable: boolean;
   readonly sideChatDisabledReason: string | null;
+  readonly handoffAvailable: boolean;
   readonly compactSlashCommandAvailable: boolean;
   readonly selectedProvider: ProviderDriverKind;
   readonly selectedProviderSkills: ServerProvider["skills"];
@@ -255,6 +257,17 @@ export function useComposerMenuItems({
                 command: "btw",
                 label: "/btw",
                 description: sideChatDisabledReason ?? "Same as /side",
+              },
+            ] as const)
+          : []),
+        ...(handoffAvailable
+          ? ([
+              {
+                id: "slash:handoff",
+                type: "slash-command",
+                command: "handoff",
+                label: "/handoff",
+                description: "Send the next message to a fresh agent that reads this thread",
               },
             ] as const)
           : []),

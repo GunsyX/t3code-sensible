@@ -6105,12 +6105,18 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       projection.thread.historyOrigin === "v1_import"
         ? yield* readHandoffItems(command.threadId, [null])
         : [];
+    // A fresh handoff switches onto a new native thread, even on the same instance.
+    const freshHandoff =
+      command.freshHandoff === true &&
+      activeProviderThread !== undefined &&
+      activeProviderThread.nativeThreadRef !== null;
     const isProviderSwitch =
       activeProviderThread !== undefined &&
-      activeProviderThread.providerInstanceId !== modelSelection.instanceId;
+      (freshHandoff || activeProviderThread.providerInstanceId !== modelSelection.instanceId);
     // Account overlays share native history. Selection commands may already
     // have updated the app thread, so classify against the native thread's owner.
     const canResumeAcrossInstances =
+      !freshHandoff &&
       isProviderSwitch &&
       activeProviderThread.nativeThreadRef !== null &&
       (yield* providerSwitchService
@@ -6534,7 +6540,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     );
     const targetProviderThread =
       isProviderSwitch && !canResumeAcrossInstances
-        ? rootProviderThreadsForProvider(projection, modelSelection.instanceId)[0]
+        ? freshHandoff
+          ? undefined
+          : rootProviderThreadsForProvider(projection, modelSelection.instanceId)[0]
         : activeProviderThread;
     const providerSessionId =
       (canResumeAcrossInstances ? undefined : targetProviderThread?.providerSessionId) ??
@@ -7430,8 +7438,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       });
     }
 
-    if (canResumeAcrossInstances && activeProviderThread.providerSessionId !== null) {
+    if (
+      (canResumeAcrossInstances ||
+        (freshHandoff && activeProviderThread.providerSessionId !== providerSessionId)) &&
+      activeProviderThread.providerSessionId !== null
+    ) {
       const previousProviderSessionId = activeProviderThread.providerSessionId;
+      const detachReason = freshHandoff
+        ? "Handed off to a fresh session."
+        : "Provider account changed; continuing the native thread.";
       yield* emitEvent({
         type: "provider-session.detached",
         threadId: command.threadId,
@@ -7441,7 +7456,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         payload: {
           providerSessionId: previousProviderSessionId,
           detachedAt: now,
-          reason: "Provider account changed; continuing the native thread.",
+          reason: detachReason,
         },
       });
       yield* Ref.update(effects, (existing) => [
@@ -7453,7 +7468,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           request: {
             type: "provider-session.detach",
             providerSessionId: previousProviderSessionId,
-            detail: "Provider account changed; continuing the native thread.",
+            detail: detachReason,
           },
         } satisfies PendingOrchestrationEffectV2,
       ]);

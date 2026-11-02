@@ -1760,6 +1760,126 @@ describe("orchestration v2 provider switching", () => {
     ),
   );
 
+  it.live(
+    "hands off to a fresh native thread on request, even on the same or a returning provider",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const cwd = yield* checkpointWorkspace("fresh-handoff");
+          const capturedTurns = yield* Ref.make<ReadonlyArray<CapturedTurn>>([]);
+          const layerRegistry = ProviderAdapterRegistry.layerFromAdapters(
+            (
+              [
+                [CODEX_MODEL_SELECTION, CODEX_DRIVER, CodexProviderCapabilitiesV2],
+                [CLAUDE_MODEL_SELECTION, CLAUDE_DRIVER, ClaudeProviderCapabilitiesV2],
+              ] as const
+            ).map(([modelSelection, driver, capabilities]) =>
+              makeTestAdapter({
+                instanceId: modelSelection.instanceId,
+                driver,
+                capabilities,
+                modelSelection,
+                responseByRunOrdinal: {},
+                capturedTurns,
+              }),
+            ),
+          );
+          yield* Effect.gen(function* () {
+            const orchestrator = yield* Orchestrator.OrchestratorV2;
+            const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+            const waitForRun = (ordinal: number) =>
+              orchestrator.streamStoredEvents.pipe(
+                Stream.filter(
+                  ({ event }) =>
+                    event.type === "run.updated" &&
+                    event.threadId === threadId &&
+                    event.payload.ordinal === ordinal &&
+                    event.payload.status === "completed",
+                ),
+                Stream.runHead,
+                Effect.andThen(worker.drain()),
+              );
+            const send = (key: string, text: string, modelSelection: ModelSelection) =>
+              orchestrator.dispatch({
+                type: "message.dispatch",
+                commandId: CommandId.make(`command:fresh:${key}`),
+                threadId,
+                messageId: MessageId.make(`message:fresh:${key}`),
+                createdBy: "user",
+                creationSource: "web",
+                text,
+                attachments: [],
+                modelSelection,
+                freshHandoff: true,
+                dispatchMode: { type: "start_immediately" },
+              });
+            yield* orchestrator.dispatch({
+              type: "thread.create",
+              commandId: CommandId.make("command:fresh:create"),
+              threadId,
+              projectId,
+              createdBy: "user",
+              creationSource: "web",
+              title: "Fresh handoff",
+              modelSelection: CLAUDE_MODEL_SELECTION,
+              runtimeMode: "full-access",
+              interactionMode: "default",
+              branch: null,
+              worktreePath: null,
+            });
+            yield* send("first", "Keep the release marker violet.", CLAUDE_MODEL_SELECTION);
+            yield* waitForRun(1);
+            yield* send("same", "Continue on the same model.", CLAUDE_MODEL_SELECTION);
+            yield* waitForRun(2);
+            yield* send("away", "Try Codex.", CODEX_MODEL_SELECTION);
+            yield* waitForRun(3);
+            yield* send("back", "Back to Claude.", CLAUDE_MODEL_SELECTION);
+            yield* waitForRun(4);
+
+            const projection = yield* orchestrator.getThreadProjection(threadId);
+            const providerThreadIds = projection.runs.map((run) => run.providerThreadId);
+            assert.equal(new Set(providerThreadIds).size, 4);
+            for (const run of projection.runs.slice(1)) {
+              const handoff = projection.contextHandoffs.find(
+                (candidate) => candidate.id === run.contextHandoffId,
+              );
+              assert.equal(handoff?.strategy, "full_thread_summary");
+              assert.deepEqual(handoff?.coveredRunOrdinals, { from: 1, to: run.ordinal - 1 });
+            }
+            const sessionIdOf = (index: number) =>
+              projection.providerThreads.find(
+                (candidate) => candidate.id === providerThreadIds[index],
+              )?.providerSessionId;
+            assert.notEqual(sessionIdOf(0), sessionIdOf(1));
+            assert.isFalse(
+              projection.providerSessions.some((session) => session.id === sessionIdOf(0)),
+            );
+            const back = (yield* Ref.get(capturedTurns)).at(-1)!;
+            assert.include(back.text, "Keep the release marker violet.");
+            assert.include(back.text, "User message:\nBack to Claude.");
+          }).pipe(
+            Effect.provide(
+              ProviderReplayHarness.layerWithRegistry(
+                {
+                  name: "fresh-handoff",
+                  runtimePolicyOverride: {
+                    cwd,
+                    approvalPolicy: "never",
+                    sandboxPolicy: {
+                      type: "readOnly",
+                      access: { type: "fullAccess" },
+                      networkAccess: false,
+                    },
+                  },
+                },
+                layerRegistry,
+              ),
+            ),
+          );
+        }),
+      ),
+  );
+
   it.live("checks the queued provider's capability while the current provider stays running", () =>
     Effect.scoped(
       Effect.gen(function* () {

@@ -1,5 +1,11 @@
 import { memo, type MouseEventHandler, type PointerEventHandler } from "react";
-import { CheckIcon, ChevronDownIcon, ChevronLeftIcon, Minimize2Icon, PlayIcon } from "lucide-react";
+import {
+  ArrowRightLeftIcon,
+  CheckIcon,
+  ChevronDownIcon,
+  ChevronLeftIcon,
+  PlayIcon,
+} from "lucide-react";
 import { CornerUpRight, ListPlus } from "lucide";
 import { MorphIcon } from "~/components/MorphIcon";
 import { useEnvironmentIdentificationMode } from "~/hooks/useSettings";
@@ -49,9 +55,11 @@ interface ComposerPrimaryActionsProps {
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
-  compactBeforeSendTokens?: number | null;
-  keepFullHistory?: boolean;
-  onToggleKeepFullHistory?: () => void;
+  handoffAvailable?: boolean;
+  handoffTokens?: number | null;
+  handoffStale?: boolean;
+  handsOffOnSend?: boolean;
+  onToggleHandoff?: () => void;
 }
 
 const formatPendingPrimaryActionLabel = (input: {
@@ -103,9 +111,11 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   onPreviousPendingQuestion,
   onInterrupt,
   onImplementPlanInNewThread,
-  compactBeforeSendTokens = null,
-  keepFullHistory = false,
-  onToggleKeepFullHistory,
+  handoffAvailable = false,
+  handoffTokens = null,
+  handoffStale = false,
+  handsOffOnSend = false,
+  onToggleHandoff,
 }: ComposerPrimaryActionsProps) {
   const pointerFocusProps = preserveComposerFocusOnPointerDown
     ? { onPointerDown: preventPointerFocus }
@@ -265,18 +275,17 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
 
   const showResume = canResume && !hasSendableContent && !isEditingQueuedMessage;
 
-  const compactTokens =
-    compactBeforeSendTokens !== null && !showResume && !isEditingQueuedMessage
-      ? formatContextWindowTokens(compactBeforeSendTokens)
-      : null;
-  const compactsBeforeSend = compactTokens !== null && !keepFullHistory;
+  const showHandoff = handoffAvailable && !showResume && !isEditingQueuedMessage && !isRunning;
+  const handsOff = showHandoff && handsOffOnSend;
+  const handoffTokenLabel =
+    handoffTokens === null ? null : formatContextWindowTokens(handoffTokens);
 
   const submitLabel = showResume
     ? "Resume thread"
     : isEditingQueuedMessage
       ? "Update queued message"
-      : compactsBeforeSend
-        ? "Compact and send"
+      : handsOff
+        ? "Hand off and send"
         : isQueuing
           ? "Queue message"
           : isRunning
@@ -294,8 +303,8 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           : null));
   const submitTooltip =
     submitStatus ??
-    (compactsBeforeSend
-      ? `Summarize ${compactTokens} tokens of history, then send`
+    (handsOff
+      ? "Start a fresh agent that reads this thread, then send"
       : isRunning && !isEditingQueuedMessage && canSteer
         ? `Click to ${followUpBehavior}, ${isMacPlatform(navigator.platform) ? "⌘" : "Ctrl"}-click${alternateShortcutLabel ? ` or ${alternateShortcutLabel}` : ""} to ${alternateAction}`
         : submitLabel);
@@ -352,10 +361,21 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       <TooltipPopup>{submitTooltip}</TooltipPopup>
     </Tooltip>
   );
-  if (compactTokens === null) return submit;
+  if (!showHandoff) return submit;
+
+  const handoffTooltip = handsOff
+    ? "Next send starts a fresh agent that reads this thread."
+    : handoffTokenLabel !== null
+      ? `Next send resumes all ${handoffTokenLabel} tokens.`
+      : "Next send resumes the current session.";
+  const handoffAction = handsOff
+    ? handoffStale
+      ? "Click to resume full history"
+      : "Click to cancel the handoff"
+    : "Click to hand off instead";
 
   return (
-    <div data-chat-composer-compact-send="true" className="flex items-center gap-2">
+    <div data-chat-composer-handoff-send="true" className="flex items-center gap-2">
       <Tooltip>
         <TooltipTrigger
           render={
@@ -363,26 +383,26 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
               type="button"
               className="flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-(--control-radius) px-2 font-medium text-base text-foreground/80 tabular-nums outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-64 sm:text-sm aria-pressed:bg-accent/60 aria-pressed:text-foreground [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:text-muted-foreground"
               {...pointerFocusProps}
-              aria-pressed={!keepFullHistory}
-              aria-label={`Compact ${compactTokens} tokens of history before sending`}
+              aria-pressed={handsOff}
+              aria-label={handsOff ? "Hand off to a fresh agent" : "Resume full history"}
               disabled={!canOperateThread}
-              onClick={onToggleKeepFullHistory}
+              onClick={onToggleHandoff}
             />
           }
         >
-          <Minimize2Icon aria-hidden="true" />
-          <span className="@max-[480px]/composer-surface:hidden">
-            {keepFullHistory ? "Keep" : "Compact"}
-          </span>
-          <span className="text-muted-foreground">{compactTokens}</span>
+          <ArrowRightLeftIcon aria-hidden="true" />
+          {handoffStale || handsOff ? (
+            <span className="@max-[480px]/composer-surface:hidden">
+              {handsOff ? "Handoff" : "Full"}
+            </span>
+          ) : null}
+          {handoffStale && handoffTokenLabel !== null ? (
+            <span className="text-muted-foreground">{handoffTokenLabel}</span>
+          ) : null}
         </TooltipTrigger>
         <TooltipPopup>
-          <div>
-            {keepFullHistory
-              ? `Next send keeps all ${compactTokens} tokens.`
-              : `Next send compacts ${compactTokens} tokens first.`}
-          </div>
-          <div>{keepFullHistory ? "Click to compact first" : "Click to keep full history"}</div>
+          <div>{handoffTooltip}</div>
+          <div>{handoffAction}</div>
         </TooltipPopup>
       </Tooltip>
       {submit}
