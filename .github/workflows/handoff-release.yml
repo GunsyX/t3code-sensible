@@ -1,0 +1,134 @@
+# Fork only: rebuilds the handoff patch on each upstream stable release and publishes the Windows
+# installer here for the desktop updater. The app alerts when a build is overdue
+# (apps/desktop/src/updates/PatchedBuildAlert.ts).
+#
+# GITHUB_TOKEN cannot push workflow changes, so this rebases a throwaway copy and the branch stays
+# where it is. After a failed run, rebase the branch by hand and rerun:
+#   git fetch upstream --tags && git rebase <tag> && git push --force-with-lease
+#   gh workflow run handoff-release.yml
+name: Handoff Release
+
+on:
+  schedule:
+    - cron: "23 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Upstream tag to build. Empty builds the latest stable release."
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: handoff-release
+
+env:
+  UPSTREAM_REPOSITORY: pingdotgg/t3code
+
+jobs:
+  release:
+    runs-on: windows-2025
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+      T3CODE_CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
+      T3CODE_CLERK_JWT_TEMPLATE: ${{ vars.CLERK_JWT_TEMPLATE }}
+      T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: ${{ vars.CLERK_CLI_OAUTH_CLIENT_ID }}
+      T3CODE_RELAY_URL: ${{ vars.RELAY_URL }}
+    steps:
+      - name: Find the release to build
+        id: release
+        env:
+          REQUESTED_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          tag="${REQUESTED_TAG:-$(gh api "repos/$UPSTREAM_REPOSITORY/releases/latest" --jq .tag_name)}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "$tag is already published here."
+            echo "built=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "built=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # .repos holds orphaned gitlinks that break actions/checkout's cleanup, and very long paths.
+      - name: Rebase the patch onto the release
+        if: steps.release.outputs.built == 'false'
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git init .
+          git config core.longpaths true
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git remote add upstream "https://github.com/${UPSTREAM_REPOSITORY}.git"
+          git fetch --filter=blob:none origin "$GITHUB_REF_NAME"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git -c checkout.workers=0 checkout --detach FETCH_HEAD
+          git fetch --filter=blob:none --no-tags upstream "refs/tags/$TAG:refs/tags/$TAG"
+          if ! git rebase "$TAG"; then
+            git status --short | grep -v '^[AMDRC] ' || true
+            git rebase --abort
+            echo "::error::The handoff patch conflicts with $TAG."
+            exit 1
+          fi
+
+      - name: Setup dependencies
+        if: steps.release.outputs.built == 'false'
+        uses: ./.github/actions/setup-ci-deps
+        with:
+          install-args: --filter=t3... --filter=@t3tools/web... --filter=@t3tools/desktop... --filter=@t3tools/scripts...
+
+      # A clean rebase can still leave the patch silently dead, which costs a full resume per send.
+      - name: Check the patch still works
+        if: steps.release.outputs.built == 'false'
+        run: |
+          set -euo pipefail
+          vp run --filter t3 --filter @t3tools/web --filter @t3tools/desktop typecheck
+          cd apps/server
+          vp test run src/orchestration-v2/testkit/ProviderSwitch.integration.test.ts
+
+      # The WSL backend needs a Linux server archive, so WSL keeps running upstream's stock server.
+      - name: Build the installer
+        if: steps.release.outputs.built == 'false'
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          node scripts/update-release-package-versions.ts "$VERSION"
+          gh release download "$TAG" --repo "$UPSTREAM_REPOSITORY" --dir wsl-runtime \
+            --pattern "t3-$VERSION-linux-x64.tar.gz"
+          vp run dist:desktop:artifact --platform win --target nsis --arch x64 \
+            --build-version "$VERSION" --wsl-runtime "$PWD/wsl-runtime/t3-$VERSION-linux-x64.tar.gz" \
+            --keep-stage --verbose
+
+      - name: Verify the packaged app
+        if: steps.release.outputs.built == 'false'
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          tmp=$(cygpath -u "$(node -p "require('node:os').tmpdir()")")
+          unpacked=$(ls -d "$tmp"/t3code-desktop-win-stage-*/app/dist/win-unpacked)
+          node scripts/verify-windows-desktop-artifact.ts --app-dir "$(cygpath -w "$unpacked")" \
+            --arch x64 --build-version "$VERSION" --verbose
+
+      - name: Publish
+        if: steps.release.outputs.built == 'false'
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --latest \
+            --title "$TAG with handoff" \
+            --notes "Upstream $TAG with the handoff patch from $GITHUB_REF_NAME ($GITHUB_SHA)." \
+            release/*.exe release/*.exe.blockmap release/latest.yml
