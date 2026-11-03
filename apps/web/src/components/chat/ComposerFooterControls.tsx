@@ -282,6 +282,7 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
   compactDisabled: boolean;
   compactDisabledReason: string | null;
   handoffAvailable: boolean;
+  handoffDisabled: boolean;
   handoffTokens: number | null;
   handoffStale: boolean;
   handsOffOnSend: boolean;
@@ -325,6 +326,7 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
         onInterrupt={props.onInterrupt}
         onImplementPlanInNewThread={props.onImplementPlanInNewThread}
         handoffAvailable={props.handoffAvailable}
+        handoffDisabled={props.handoffDisabled}
         handoffTokens={props.handoffTokens}
         handoffStale={props.handoffStale}
         handsOffOnSend={props.handsOffOnSend}
