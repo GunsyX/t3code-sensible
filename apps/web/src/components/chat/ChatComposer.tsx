@@ -381,6 +381,7 @@ export interface ChatComposerProps {
   isCompacting: boolean;
   bannerItems: readonly ComposerBannerStackItem[];
   handoffAvailable: boolean;
+  handoffDisabled: boolean;
   handoffTokens: number | null;
   handoffStale: boolean;
   handsOffOnSend: boolean;
@@ -1136,7 +1137,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     planModeUiEnabled,
     sideChatAvailable: props.sideChatAvailable === true,
     sideChatDisabledReason: props.sideChatDisabledReason ?? null,
-    handoffAvailable: props.handoffAvailable,
+    handoffAvailable: props.handoffAvailable && !props.handoffDisabled,
     compactSlashCommandAvailable,
     selectedProvider,
     selectedProviderSkills,
@@ -3511,6 +3512,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     onInterrupt={handleInterruptPrimaryActionStable}
                     onImplementPlanInNewThread={handleImplementPlanInNewThreadPrimaryActionStable}
                     handoffAvailable={props.handoffAvailable}
+                    handoffDisabled={props.handoffDisabled}
                     handoffTokens={props.handoffTokens}
                     handoffStale={props.handoffStale}
                     handsOffOnSend={props.handsOffOnSend}

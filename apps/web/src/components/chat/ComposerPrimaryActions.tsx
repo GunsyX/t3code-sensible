@@ -1,4 +1,4 @@
-import { memo, type MouseEventHandler, type PointerEventHandler } from "react";
+import { memo, type MouseEventHandler, type PointerEventHandler, type ReactNode } from "react";
 import {
   ArrowRightFromLineIcon,
   CheckIcon,
@@ -56,6 +56,7 @@ interface ComposerPrimaryActionsProps {
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
   handoffAvailable?: boolean;
+  handoffDisabled?: boolean;
   handoffTokens?: number | null;
   handoffStale?: boolean;
   handsOffOnSend?: boolean;
@@ -112,6 +113,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   onInterrupt,
   onImplementPlanInNewThread,
   handoffAvailable = false,
+  handoffDisabled = false,
   handoffTokens = null,
   handoffStale = false,
   handsOffOnSend = false,
@@ -269,16 +271,64 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     );
   }
 
-  if (canInterrupt && !hasSendableContent && !isEditingQueuedMessage) {
-    return renderStopGenerationButton(false);
-  }
-
   const showResume = canResume && !hasSendableContent && !isEditingQueuedMessage;
 
-  const showHandoff = handoffAvailable && !showResume && !isEditingQueuedMessage && !isRunning;
-  const handsOff = showHandoff && handsOffOnSend;
+  // Disabled rather than hidden while the agent works, so the send button never shifts.
+  const showHandoff = handoffAvailable && !showResume && !isEditingQueuedMessage;
+  const handsOff = showHandoff && !handoffDisabled && handsOffOnSend;
   const handoffTokenLabel =
     handoffTokens === null ? null : formatContextWindowTokens(handoffTokens);
+  const withHandoff = (primary: ReactNode) => {
+    if (!showHandoff) return primary;
+    const handoffTooltip = handsOff
+      ? "Next send starts a fresh agent that reads this thread."
+      : handoffTokenLabel !== null
+        ? `Next send resumes all ${handoffTokenLabel} tokens.`
+        : "Next send resumes the current session.";
+    const handoffAction = handsOff
+      ? handoffStale
+        ? "Click to resume full history"
+        : "Click to cancel the handoff"
+      : "Click to hand off instead";
+    return (
+      <div data-chat-composer-handoff-send="true" className="flex items-center gap-2">
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                className="flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-(--control-radius) px-2 font-medium text-base text-foreground/80 tabular-nums outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-64 sm:text-sm aria-pressed:bg-accent/60 aria-pressed:text-foreground [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:text-muted-foreground"
+                {...pointerFocusProps}
+                aria-pressed={handsOff}
+                aria-label={handsOff ? "Hand off to a fresh agent" : "Resume full history"}
+                disabled={!canOperateThread || handoffDisabled}
+                onClick={onToggleHandoff}
+              />
+            }
+          >
+            <ArrowRightFromLineIcon aria-hidden="true" />
+            {handoffStale || handsOff ? (
+              <span className="@max-[480px]/composer-surface:hidden">
+                {handsOff ? "Handoff" : "Full"}
+              </span>
+            ) : null}
+            {handoffStale && handoffTokenLabel !== null ? (
+              <span className="text-muted-foreground">{handoffTokenLabel}</span>
+            ) : null}
+          </TooltipTrigger>
+          <TooltipPopup>
+            <div>{handoffTooltip}</div>
+            <div>{handoffAction}</div>
+          </TooltipPopup>
+        </Tooltip>
+        {primary}
+      </div>
+    );
+  };
+
+  if (canInterrupt && !hasSendableContent && !isEditingQueuedMessage) {
+    return withHandoff(renderStopGenerationButton(false));
+  }
 
   const submitLabel = showResume
     ? "Resume thread"
@@ -361,51 +411,5 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       <TooltipPopup>{submitTooltip}</TooltipPopup>
     </Tooltip>
   );
-  if (!showHandoff) return submit;
-
-  const handoffTooltip = handsOff
-    ? "Next send starts a fresh agent that reads this thread."
-    : handoffTokenLabel !== null
-      ? `Next send resumes all ${handoffTokenLabel} tokens.`
-      : "Next send resumes the current session.";
-  const handoffAction = handsOff
-    ? handoffStale
-      ? "Click to resume full history"
-      : "Click to cancel the handoff"
-    : "Click to hand off instead";
-
-  return (
-    <div data-chat-composer-handoff-send="true" className="flex items-center gap-2">
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <button
-              type="button"
-              className="flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-(--control-radius) px-2 font-medium text-base text-foreground/80 tabular-nums outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-64 sm:text-sm aria-pressed:bg-accent/60 aria-pressed:text-foreground [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:text-muted-foreground"
-              {...pointerFocusProps}
-              aria-pressed={handsOff}
-              aria-label={handsOff ? "Hand off to a fresh agent" : "Resume full history"}
-              disabled={!canOperateThread}
-              onClick={onToggleHandoff}
-            />
-          }
-        >
-          <ArrowRightFromLineIcon aria-hidden="true" />
-          {handoffStale || handsOff ? (
-            <span className="@max-[480px]/composer-surface:hidden">
-              {handsOff ? "Handoff" : "Full"}
-            </span>
-          ) : null}
-          {handoffStale && handoffTokenLabel !== null ? (
-            <span className="text-muted-foreground">{handoffTokenLabel}</span>
-          ) : null}
-        </TooltipTrigger>
-        <TooltipPopup>
-          <div>{handoffTooltip}</div>
-          <div>{handoffAction}</div>
-        </TooltipPopup>
-      </Tooltip>
-      {submit}
-    </div>
-  );
+  return withHandoff(submit);
 });

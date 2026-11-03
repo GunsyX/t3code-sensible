@@ -2473,12 +2473,15 @@ export default function ChatView(props: ChatViewProps) {
           ? "Compaction is unavailable for this provider"
           : "Compacting is unavailable right now"
     : null;
-  const handoffAvailable =
+  const handoffShown =
     serverConfig?.environment.capabilities.freshHandoff === true &&
     canOperateThread &&
     activeThread !== undefined &&
     activeThreadHasCompactableConversation &&
     isServerThread &&
+    multipleModelSelections === null;
+  const handoffAvailable =
+    handoffShown &&
     !isWorking &&
     !isRevertingCheckpoint &&
     !threadDetailLoading &&
@@ -2486,8 +2489,7 @@ export default function ChatView(props: ChatViewProps) {
     !activeEnvironmentUnavailable &&
     pendingApprovals.length === 0 &&
     pendingUserInputs.length === 0 &&
-    !hasHeldQueuedRuns &&
-    multipleModelSelections === null;
+    !hasHeldQueuedRuns;
   const handoffTokens = handoffAvailable ? (activeContextWindow?.usedTokens ?? null) : null;
   const handoffStale =
     handoffAvailable &&
@@ -3630,7 +3632,8 @@ export default function ChatView(props: ChatViewProps) {
                               }
                               isPreparingWorktree={isPreparingWorktree && !sendQueuesBehindSetup}
                               bannerItems={isDraftHeroState ? [] : composerBannerItems}
-                              handoffAvailable={handoffAvailable}
+                              handoffAvailable={handoffShown}
+                              handoffDisabled={!handoffAvailable}
                               handoffTokens={handoffTokens}
                               handoffStale={handoffStale}
                               handsOffOnSend={handsOffOnSend}
