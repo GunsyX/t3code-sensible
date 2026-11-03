@@ -206,6 +206,7 @@ export function runOrchestratorV2ProviderReplayScenario<
     readonly recoverOnStartup?: boolean;
     readonly continueThreadsAfterServerUpdate?: boolean;
     readonly managedPolicy?: ManagedPolicyDocument;
+    readonly handoffInstructions?: string;
   } = {},
 ): Effect.Effect<
   OrchestratorV2ScenarioResult,
@@ -249,6 +250,7 @@ export function layerProviderReplay<Transcript extends ProviderReplayTranscript,
     readonly recoverOnStartup?: boolean;
     readonly continueThreadsAfterServerUpdate?: boolean;
     readonly managedPolicy?: ManagedPolicyDocument;
+    readonly handoffInstructions?: string;
     readonly replayGate?: ProviderReplayGate;
   } = {},
 ): Layer.Layer<
@@ -283,6 +285,7 @@ export function layerWithRegistry<Error>(
     readonly recoverOnStartup?: boolean;
     readonly continueThreadsAfterServerUpdate?: boolean;
     readonly managedPolicy?: ManagedPolicyDocument;
+    readonly handoffInstructions?: string;
   } = {},
 ): Layer.Layer<
   | Orchestrator.OrchestratorV2
@@ -317,6 +320,9 @@ export function layerWithRegistry<Error>(
           ...(options.continueThreadsAfterServerUpdate === undefined
             ? {}
             : { continueThreadsAfterServerUpdate: options.continueThreadsAfterServerUpdate }),
+          ...(options.handoffInstructions === undefined
+            ? {}
+            : { handoffInstructions: options.handoffInstructions }),
         },
         policy.summary,
       ),
