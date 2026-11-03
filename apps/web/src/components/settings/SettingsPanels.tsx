@@ -76,6 +76,7 @@ import { EMPTY_SERVER_PROVIDERS } from "../../state/server";
 import { Button } from "../ui/button";
 import { DraftInput } from "../ui/draft-input";
 import { Input } from "../ui/input";
+import { Textarea } from "../ui/textarea";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { ScopedSwitch } from "./ScopedSwitch";
@@ -1490,6 +1491,67 @@ function ScopedCompactIdleThreadsRow() {
         </Select>
       }
     />
+  );
+}
+
+/** The Providers panel can render without a settings scope, as its tests do; this row needs one. */
+export function HandoffInstructionsRow() {
+  return useOptionalSettingsScope() === null ? null : <ScopedHandoffInstructionsRow />;
+}
+
+function ScopedHandoffInstructionsRow() {
+  const { connectedEnvironments, targets } = useSettingsScope();
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  const mixed = useScopedSettingsMixed(["handoffInstructions"]);
+  const edited = useRef(false);
+  if (
+    connectedEnvironments.some(
+      (environment) =>
+        environment.serverConfig?.environment.capabilities.handoffInstructions !== true,
+    )
+  )
+    return null;
+  const scopeKey = targets.map((target) => target.environmentId).join(",");
+
+  return (
+    <SettingsRow
+      {...searchableSetting("handoff-instructions")}
+      serverScoped
+      settingKeys={["handoffInstructions"]}
+      description="Added to every handoff, after the thread history and before your message, when a fresh agent takes over a thread."
+      resetAction={
+        mixed || settings.handoffInstructions !== "" ? (
+          <SettingResetButton
+            label="handoff instructions"
+            onClick={() => updateSettings({ handoffInstructions: "" })}
+          />
+        ) : null
+      }
+    >
+      <div className="mt-3 max-w-2xl pb-3.5">
+        <Textarea
+          key={`${scopeKey}:${mixed}:${settings.handoffInstructions}`}
+          aria-label="Handoff instructions"
+          onChange={() => {
+            edited.current = true;
+          }}
+          rows={4}
+          defaultValue={mixed ? "" : settings.handoffInstructions}
+          placeholder={
+            mixed
+              ? "Mixed. Enter instructions to apply to all selected targets."
+              : "Read the last few runs with t3_thread_read before changing code, and confirm the plan you are continuing."
+          }
+          onBlur={(event) => {
+            const value = event.target.value.trim();
+            if (edited.current && (mixed || value !== settings.handoffInstructions))
+              updateSettings({ handoffInstructions: value });
+            edited.current = false;
+          }}
+        />
+      </div>
+    </SettingsRow>
   );
 }
 

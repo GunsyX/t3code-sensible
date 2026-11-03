@@ -1872,6 +1872,11 @@ describe("orchestration v2 provider switching", () => {
             const back = (yield* Ref.get(capturedTurns)).at(-1)!;
             assert.include(back.text, "Keep the release marker violet.");
             assert.include(back.text, "User message:\nBack to Claude.");
+            assert.include(back.text, "Confirm the plan before editing.\n\nUser message:");
+            assert.notInclude(
+              (yield* Ref.get(capturedTurns))[0]!.text,
+              "Confirm the plan before editing.",
+            );
           }).pipe(
             Effect.provide(
               ProviderReplayHarness.layerWithRegistry(
@@ -1888,6 +1893,7 @@ describe("orchestration v2 provider switching", () => {
                   },
                 },
                 layerRegistry,
+                { handoffInstructions: "Confirm the plan before editing." },
               ),
             ),
           );
