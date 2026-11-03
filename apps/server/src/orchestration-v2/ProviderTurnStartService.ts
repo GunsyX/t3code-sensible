@@ -149,6 +149,7 @@ export const layer: Layer.Layer<
   Effect.gen(function* () {
     const eventSink = yield* EventSink.EventSinkV2;
     const contextHandoffService = yield* ContextHandoffService.ContextHandoffServiceV2;
+    const serverSettings = yield* ServerSettings.ServerSettingsService;
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
@@ -1560,7 +1561,14 @@ export const layer: Layer.Layer<
             sideChatHandoff === undefined || compact || goalCommand
               ? ""
               : sideChatHandoff.summaryText;
-          const context = [delivery.context, sideChatContext, restartNote]
+          const handoffInstructions =
+            effectiveHandoffs.length === 0 || compact || goalCommand
+              ? ""
+              : yield* serverSettings.getSettings.pipe(
+                  Effect.map((settings) => settings.handoffInstructions),
+                  Effect.orElseSucceed(() => ""),
+                );
+          const context = [delivery.context, sideChatContext, handoffInstructions, restartNote]
             .filter((part) => part !== "")
             .join("\n\n");
           const { restartContinuationOfRunId: _resumedRunId, ...promptedInput } = turnInput;

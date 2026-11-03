@@ -492,6 +492,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["claude context compaction idle cache tokens usage summary resume"],
   },
   {
+    id: "handoff-instructions",
+    title: "Handoff instructions",
+    to: "/settings/providers",
+    scope: "environment-defaults",
+    searchTerms: ["fresh agent stale thread context handoff prompt continue"],
+  },
+  {
     id: "auto-settle-merged-threads",
     title: "Auto-settle merged threads",
     to: "/settings/threads",
