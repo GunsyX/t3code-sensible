@@ -1,6 +1,6 @@
 import { memo, type MouseEventHandler, type PointerEventHandler } from "react";
 import {
-  ArrowRightLeftIcon,
+  ArrowRightFromLineIcon,
   CheckIcon,
   ChevronDownIcon,
   ChevronLeftIcon,
@@ -390,7 +390,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
             />
           }
         >
-          <ArrowRightLeftIcon aria-hidden="true" />
+          <ArrowRightFromLineIcon aria-hidden="true" />
           {handoffStale || handsOff ? (
             <span className="@max-[480px]/composer-surface:hidden">
               {handsOff ? "Handoff" : "Full"}
