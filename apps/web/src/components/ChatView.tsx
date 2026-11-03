@@ -2444,6 +2444,7 @@ export default function ChatView(props: ChatViewProps) {
   // `/clear` already drops the old context, so an armed fresh session never hands off too.
   const freshSessionArmed = useFreshSessionArmed(routeThreadKey);
   const handoffAvailable =
+    serverConfig?.environment.capabilities.freshHandoff === true &&
     canOperateThread &&
     activeThread !== undefined &&
     activeThreadHasCompactableConversation &&
