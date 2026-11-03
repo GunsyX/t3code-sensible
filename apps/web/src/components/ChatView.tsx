@@ -2443,12 +2443,15 @@ export default function ChatView(props: ChatViewProps) {
   const compactDisabled = compactThreadUnavailable;
   // `/clear` already drops the old context, so an armed fresh session never hands off too.
   const freshSessionArmed = useFreshSessionArmed(routeThreadKey);
-  const handoffAvailable =
+  const handoffShown =
     serverConfig?.environment.capabilities.freshHandoff === true &&
     canOperateThread &&
     activeThread !== undefined &&
     activeThreadHasCompactableConversation &&
     isServerThread &&
+    multipleModelSelections === null;
+  const handoffAvailable =
+    handoffShown &&
     !freshSessionArmed &&
     !isWorking &&
     !isRevertingCheckpoint &&
@@ -2457,8 +2460,7 @@ export default function ChatView(props: ChatViewProps) {
     !activeEnvironmentUnavailable &&
     pendingApprovals.length === 0 &&
     pendingUserInputs.length === 0 &&
-    !hasHeldQueuedRuns &&
-    multipleModelSelections === null;
+    !hasHeldQueuedRuns;
   const handoffTokens = handoffAvailable ? (activeContextWindow?.usedTokens ?? null) : null;
   const handoffStale =
     handoffAvailable &&
@@ -3621,7 +3623,8 @@ export default function ChatView(props: ChatViewProps) {
                                     ? EMPTY_COMPOSER_BANNER_ITEMS
                                     : composerBannerItems
                                 }
-                                handoffAvailable={handoffAvailable}
+                                handoffAvailable={handoffShown}
+                                handoffDisabled={!handoffAvailable}
                                 handoffTokens={handoffTokens}
                                 handoffStale={handoffStale}
                                 handsOffOnSend={handsOffOnSend}

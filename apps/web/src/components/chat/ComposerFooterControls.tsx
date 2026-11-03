@@ -215,6 +215,7 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
   handoffAvailable: boolean;
+  handoffDisabled: boolean;
   handoffTokens: number | null;
   handoffStale: boolean;
   handsOffOnSend: boolean;
@@ -245,6 +246,7 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
         onPreviousPendingQuestion={props.onPreviousPendingQuestion}
         onInterrupt={props.onInterrupt}
         handoffAvailable={props.handoffAvailable}
+        handoffDisabled={props.handoffDisabled}
         handoffTokens={props.handoffTokens}
         handoffStale={props.handoffStale}
         handsOffOnSend={props.handsOffOnSend}
