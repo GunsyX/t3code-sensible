@@ -1002,6 +1002,22 @@ function rootProviderThreadsForProvider(
     );
 }
 
+const HANDOFF_COMMAND_PATTERN = /^\/handoff(?:\s+([\s\S]*))?$/i;
+
+/** Clients without a handoff control type `/handoff [message]`; it works like the flag. */
+function withHandoffCommand<Command extends { readonly text: string; readonly createdBy: string }>(
+  command: Command,
+): Command {
+  const match =
+    command.createdBy === "user" ? HANDOFF_COMMAND_PATTERN.exec(command.text.trim()) : null;
+  if (match === null) return command;
+  return {
+    ...command,
+    text: match[1]?.trim() || "Continue where the previous agent left off.",
+    freshHandoff: true,
+  };
+}
+
 function isHandoffSourceRun(run: OrchestrationV2Run): boolean {
   return run.status === "completed" || run.status === "failed" || run.status === "interrupted";
 }
@@ -13288,14 +13304,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           command.guestMessageId === undefined
             ? undefined
             : yield* emitGuestMessageSent(command, command.guestMessageId, thread, events);
-        const dispatched =
+        const dispatched = withHandoffCommand(
           guestSend === undefined
             ? withoutGuestAttribution(command)
             : {
                 ...command,
                 text: guestSend.text,
                 context: { version: 1 as const, records: [], guest: guestSend.guest },
-              };
+              },
+        );
         cancelUnsettledEffects = yield* dispatchMessage(dispatched, events, effects);
         yield* recordSubagentFollowup(dispatched, events).pipe(mapDispatchError(command));
         break;

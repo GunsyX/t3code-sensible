@@ -237,6 +237,7 @@ export const make = Effect.gen(function* () {
       settledWorktreeCleanup: true,
       worktreesDirectory: true,
       handoffInstructions: true,
+      freshHandoff: true,
       threadAutoSettlementScope: true,
       threadRestartContinuation: true,
       projectSettingsOverrides: true,

@@ -1806,7 +1806,12 @@ describe("orchestration v2 provider switching", () => {
                 Stream.runHead,
                 Effect.andThen(worker.drain()),
               );
-            const send = (key: string, text: string, modelSelection: ModelSelection) =>
+            const send = (
+              key: string,
+              text: string,
+              modelSelection: ModelSelection,
+              freshHandoff = true,
+            ) =>
               orchestrator.dispatch({
                 type: "message.dispatch",
                 commandId: CommandId.make(`command:fresh:${key}`),
@@ -1817,7 +1822,7 @@ describe("orchestration v2 provider switching", () => {
                 text,
                 attachments: [],
                 modelSelection,
-                freshHandoff: true,
+                ...(freshHandoff ? { freshHandoff: true } : {}),
                 dispatchMode: { type: "start_immediately" },
               });
             yield* orchestrator.dispatch({
@@ -1848,7 +1853,8 @@ describe("orchestration v2 provider switching", () => {
             );
             yield* send("away", "Try Codex.", CODEX_MODEL_SELECTION);
             yield* waitForRun(3);
-            yield* send("back", "Back to Claude.", CLAUDE_MODEL_SELECTION);
+            // A client without the flag types the command instead.
+            yield* send("back", "/handoff Back to Claude.", CLAUDE_MODEL_SELECTION, false);
             yield* waitForRun(4);
 
             const projection = yield* orchestrator.getThreadProjection(threadId);

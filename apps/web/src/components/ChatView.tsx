@@ -2457,6 +2457,7 @@ export default function ChatView(props: ChatViewProps) {
           : "Compacting is unavailable right now"
     : null;
   const handoffAvailable =
+    serverConfig?.environment.capabilities.freshHandoff === true &&
     canOperateThread &&
     activeThread !== undefined &&
     activeThreadHasCompactableConversation &&
