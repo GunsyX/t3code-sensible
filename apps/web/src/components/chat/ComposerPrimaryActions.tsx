@@ -231,8 +231,11 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         </>
       );
     }
+    // The count is the old session a handoff skips, not what it sends, so it only shows on Full.
     const handoffTooltip = handsOff
-      ? "Next send starts a fresh agent that reads this thread."
+      ? handoffTokenLabel !== null
+        ? `Next send starts a fresh agent that reads this thread instead of resuming all ${handoffTokenLabel} tokens.`
+        : "Next send starts a fresh agent that reads this thread."
       : handoffTokenLabel !== null
         ? `Next send resumes all ${handoffTokenLabel} tokens.`
         : "Next send resumes the current session.";
@@ -263,7 +266,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
                 {handsOff ? "Handoff" : "Full"}
               </span>
             ) : null}
-            {handoffStale && handoffTokenLabel !== null ? (
+            {handoffStale && !handsOff && handoffTokenLabel !== null ? (
               <span className="text-muted-foreground">{handoffTokenLabel}</span>
             ) : null}
           </TooltipTrigger>
