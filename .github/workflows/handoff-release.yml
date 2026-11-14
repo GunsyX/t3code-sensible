@@ -104,6 +104,9 @@ jobs:
           VERSION: ${{ steps.release.outputs.version }}
         run: |
           set -euo pipefail
+          # Upstream builds Windows on Linux, where this afterPack hook skips the server compile
+          # cache. Run here, it adds ~20 files and breaks the 80-file payload cap, so match upstream.
+          echo 'module.exports = async () => {};' > scripts/prepare-server-compile-cache.cjs
           node scripts/update-release-package-versions.ts "$VERSION"
           gh release download "$TAG" --repo "$UPSTREAM_REPOSITORY" --dir wsl-runtime \
             --pattern "t3-$VERSION-linux-x64.tar.gz"
