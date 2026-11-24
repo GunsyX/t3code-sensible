@@ -237,10 +237,9 @@ interface ComposerSendInput {
   readonly isDraftHeroState: boolean;
   readonly panelAnimationsActive: boolean;
   readonly panelAnimationDurationMs: number;
-  readonly keepFullHistory: boolean;
+  readonly handsOffOnSend: boolean;
   /** `/clear` can arm a fresh session on this thread. */
   readonly freshSessionAvailable: boolean;
-  readonly resumeCompactionTokens: number | null;
   readonly usageLimitsKey: string | null;
   readonly usageLimitsOffered: boolean;
   readonly openUsageLimits: UsageLimitsPanel["open"];
@@ -270,7 +269,7 @@ interface ComposerSendInput {
     SetStateAction<Record<string, ReadonlyArray<CodexFeedbackSubmission>>>
   >;
   readonly setThreadError: ReturnType<typeof makeThreadErrorSetter>;
-  readonly setKeepFullHistory: (threadKey: string, keep: boolean) => void;
+  readonly clearHandoffChoice: (threadKey: string) => void;
   readonly anchorNewTurn: TimelineFollow["anchorNewTurn"];
   readonly acknowledgeActiveThreadWoke: () => void;
   /** Resolves true once the side chat started and got the message. */
@@ -335,9 +334,8 @@ export function useComposerSend(input: ComposerSendInput) {
     isDraftHeroState,
     panelAnimationsActive,
     panelAnimationDurationMs,
-    keepFullHistory,
+    handsOffOnSend,
     freshSessionAvailable,
-    resumeCompactionTokens,
     usageLimitsKey,
     usageLimitsOffered,
     openUsageLimits,
@@ -361,7 +359,7 @@ export function useComposerSend(input: ComposerSendInput) {
     optimisticBlobPreviews,
     setFeedbackSubmissionsByThreadKey,
     setThreadError,
-    setKeepFullHistory,
+    clearHandoffChoice,
     anchorNewTurn,
     acknowledgeActiveThreadWoke,
     onSideChat,
@@ -964,7 +962,7 @@ export function useComposerSend(input: ComposerSendInput) {
     const {
       missingWorktreeBaseBranch,
       baseBranchForWorktree,
-      compactBeforeSend,
+      freshHandoff,
       turnDispatchMode,
       shouldQueueBehindActiveRun,
     } = planComposerTurn({
@@ -976,8 +974,7 @@ export function useComposerSend(input: ComposerSendInput) {
       worktreePath: activeThread.worktreePath,
       activeThreadBranch,
       isScratchProject: activeProjectIsScratch,
-      resumeCompactionTokens,
-      keepFullHistory,
+      handsOffOnSend,
       phase,
       dispatchMode,
       freshContext: freshArm !== undefined,
@@ -1411,28 +1408,6 @@ export function useComposerSend(input: ComposerSendInput) {
       failure = turnAttachmentsResult;
     }
 
-    if (failure === null && compactBeforeSend) {
-      const compactResult = await startThreadTurn({
-        environmentId,
-        input: {
-          threadId: threadIdForSend,
-          message: {
-            messageId: newMessageId(),
-            role: "user",
-            text: "/compact",
-            attachments: [],
-            idleCompaction: "onReturn",
-          },
-          modelSelection: ctxSelectedModelSelection,
-          runtimeMode,
-          interactionMode: DEFAULT_INTERACTION_MODE,
-        },
-      });
-      if (compactResult._tag === "Failure") {
-        failure = compactResult;
-      }
-    }
-
     let backgroundDraftOpened = false;
     let turnStartSucceeded = false;
     if (failure === null && turnAttachmentsResult._tag === "Success") {
@@ -1493,6 +1468,7 @@ export function useComposerSend(input: ComposerSendInput) {
             }),
           },
           modelSelection: ctxSelectedModelSelection,
+          ...(freshHandoff ? { freshHandoff: true } : {}),
           titleSeed: title,
           runtimeMode,
           interactionMode: DEFAULT_INTERACTION_MODE,
@@ -1536,7 +1512,7 @@ export function useComposerSend(input: ComposerSendInput) {
             checkoutPullRequestUrl,
           );
         }
-        setKeepFullHistory(routeThreadKey, false);
+        clearHandoffChoice(routeThreadKey);
         if (freshArm !== undefined) disarmFreshSession(routeThreadKey, freshArm);
         clearUsageLimitsFor(routeThreadKey);
         if (turnUsesAttachmentUploads) {

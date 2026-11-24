@@ -221,10 +221,13 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
   onResume: () => void;
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
-  compactBeforeSendTokens: number | null;
   hideCompactToggle: boolean;
-  keepFullHistory: boolean;
-  onToggleKeepFullHistory: () => void;
+  handoffAvailable: boolean;
+  handoffDisabled: boolean;
+  handoffTokens: number | null;
+  handoffStale: boolean;
+  handsOffOnSend: boolean;
+  onToggleHandoff: () => void;
 }) {
   return (
     <>
@@ -251,10 +254,13 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
         onResume={props.onResume}
         onPreviousPendingQuestion={props.onPreviousPendingQuestion}
         onInterrupt={props.onInterrupt}
-        compactBeforeSendTokens={props.compactBeforeSendTokens}
         hideCompactToggle={props.hideCompactToggle}
-        keepFullHistory={props.keepFullHistory}
-        onToggleKeepFullHistory={props.onToggleKeepFullHistory}
+        handoffAvailable={props.handoffAvailable}
+        handoffDisabled={props.handoffDisabled}
+        handoffTokens={props.handoffTokens}
+        handoffStale={props.handoffStale}
+        handsOffOnSend={props.handsOffOnSend}
+        onToggleHandoff={props.onToggleHandoff}
       >
         {props.children}
       </ComposerPrimaryActions>

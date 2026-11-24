@@ -1323,8 +1323,7 @@ describe("planComposerTurn", () => {
     worktreePath: null,
     activeThreadBranch: "main",
     isScratchProject: false,
-    resumeCompactionTokens: null,
-    keepFullHistory: false,
+    handsOffOnSend: false,
     phase: "ready" as const,
     dispatchMode: "auto" as const,
     freshContext: false,
@@ -1351,22 +1350,22 @@ describe("planComposerTurn", () => {
     });
   });
 
-  it("queues behind a compaction of a stale session, except for /compact itself", () => {
-    const stale = { ...base, resumeCompactionTokens: 120_000 };
+  it("hands off an idle thread without queueing, except for /compact itself", () => {
+    const handoff = { ...base, isServerThread: true, activeMessageCount: 3, handsOffOnSend: true };
     for (const messageText of ["hello", "/compactfoo"]) {
-      expect(planComposerTurn({ ...stale, messageText })).toMatchObject({
-        compactBeforeSend: true,
-        turnDispatchMode: "queue",
-        shouldQueueBehindActiveRun: true,
-      });
-    }
-    for (const messageText of ["/COMPACT", "/compact keep the API notes", "/compact\n  tests"]) {
-      expect(planComposerTurn({ ...stale, messageText })).toMatchObject({
-        compactBeforeSend: false,
+      expect(planComposerTurn({ ...handoff, messageText })).toMatchObject({
+        freshHandoff: true,
         turnDispatchMode: "auto",
         shouldQueueBehindActiveRun: false,
       });
     }
+    for (const messageText of ["/COMPACT", "/compact keep the API notes", "/compact\n  tests"]) {
+      expect(planComposerTurn({ ...handoff, messageText }).freshHandoff).toBe(false);
+    }
+    expect(planComposerTurn({ ...handoff, phase: "running" as const }).freshHandoff).toBe(false);
+    expect(planComposerTurn({ ...handoff, activeMessageCount: 0 }).freshHandoff).toBe(false);
+    // `/clear` already starts without the old context.
+    expect(planComposerTurn({ ...handoff, freshContext: true }).freshHandoff).toBe(false);
   });
 
   it("queues behind a running turn only when asked to", () => {
@@ -1389,16 +1388,16 @@ describe("planComposerTurn", () => {
       turnDispatchMode: "steer",
       shouldQueueBehindActiveRun: true,
     });
-    // A fresh session cannot join the running turn, and a stale one is not compacted first.
+    // A fresh session cannot join the running turn, and never hands off as well.
     expect(
       planComposerTurn({
         ...running,
         dispatchMode: "steer",
         freshContext: true,
-        resumeCompactionTokens: 120_000,
+        handsOffOnSend: true,
       }),
     ).toMatchObject({
-      compactBeforeSend: false,
+      freshHandoff: false,
       turnDispatchMode: "queue",
       shouldQueueBehindActiveRun: true,
     });

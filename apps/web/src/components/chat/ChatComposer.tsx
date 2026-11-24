@@ -391,9 +391,12 @@ export interface ChatComposerProps {
   isPreparingWorktree: boolean;
   canSteer: boolean;
   bannerItems: readonly ComposerBannerStackItem[];
-  resumeCompactionTokens: number | null;
-  keepFullHistory: boolean;
-  onToggleKeepFullHistory: () => void;
+  handoffAvailable: boolean;
+  handoffDisabled: boolean;
+  handoffTokens: number | null;
+  handoffStale: boolean;
+  handsOffOnSend: boolean;
+  onToggleHandoff: () => void;
   onUsageLimitsCommand?: (() => void) | undefined;
   sideChatAvailable?: boolean;
   sideChatDisabledReason?: string | null;
@@ -1156,6 +1159,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     sideChatAvailable: props.sideChatAvailable === true,
     sideChatDisabledReason: props.sideChatDisabledReason ?? null,
     freshSessionAvailable: props.onFreshSession !== undefined,
+    handoffAvailable: props.handoffAvailable && !props.handoffDisabled,
     compactSlashCommandAvailable,
     selectedProvider,
     selectedProviderSkills,
@@ -1265,8 +1269,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     (!composerSendState.hasSendableContent && !showResumeAction);
   const collapsedComposerPrimaryActionLabel = showResumeAction
     ? gt("Resume thread")
-    : props.resumeCompactionTokens !== null && !props.keepFullHistory
-      ? gt("Open composer to compact and send")
+    : props.handsOffOnSend
+      ? gt("Hand off and send")
       : gt("Send message");
   const showMobilePendingAnswerActions =
     isMobileViewport && !isComposerCollapsedMobile && pendingPrimaryAction !== null;
@@ -1978,6 +1982,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       return;
     }
     if (item.type === "slash-command") {
+      if (item.command === "handoff") {
+        const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
+          expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
+        });
+        if (applied) {
+          setComposerHighlightedItemId(null);
+          if (!props.handsOffOnSend) props.onToggleHandoff();
+        }
+        return;
+      }
       if (item.command === "model") {
         const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
           expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
@@ -3575,8 +3589,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     onClick={(event) => {
                       event.stopPropagation();
                       if (showResumeAction) onResume();
-                      else if (props.resumeCompactionTokens !== null && !props.keepFullHistory)
-                        expandMobileComposer();
                       else submitComposer();
                     }}
                   >
@@ -3873,10 +3885,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     onResume={onResume}
                     onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
                     onInterrupt={handleInterruptPrimaryActionStable}
-                    compactBeforeSendTokens={props.resumeCompactionTokens}
                     hideCompactToggle={dictationTakesFooter}
-                    keepFullHistory={props.keepFullHistory}
-                    onToggleKeepFullHistory={props.onToggleKeepFullHistory}
+                    handoffAvailable={props.handoffAvailable}
+                    handoffDisabled={props.handoffDisabled}
+                    handoffTokens={props.handoffTokens}
+                    handoffStale={props.handoffStale}
+                    handsOffOnSend={props.handsOffOnSend}
+                    onToggleHandoff={props.onToggleHandoff}
                   >
                     {speechInput.available ? (
                       <>

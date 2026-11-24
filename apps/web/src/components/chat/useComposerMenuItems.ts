@@ -75,6 +75,7 @@ export function useComposerMenuItems({
   sideChatAvailable,
   sideChatDisabledReason,
   freshSessionAvailable,
+  handoffAvailable,
   compactSlashCommandAvailable,
   selectedProvider,
   selectedProviderSkills,
@@ -95,6 +96,7 @@ export function useComposerMenuItems({
   readonly sideChatAvailable: boolean;
   readonly sideChatDisabledReason: string | null;
   readonly freshSessionAvailable: boolean;
+  readonly handoffAvailable: boolean;
   readonly compactSlashCommandAvailable: boolean;
   readonly selectedProvider: ProviderDriverKind;
   readonly selectedProviderSkills: ServerProvider["skills"];
@@ -285,6 +287,17 @@ export function useComposerMenuItems({
                 command: "clear",
                 label: "/clear",
                 description: gt("Start a fresh session; earlier messages stay visible"),
+              },
+            ] as const)
+          : []),
+        ...(handoffAvailable
+          ? ([
+              {
+                id: "slash:handoff",
+                type: "slash-command",
+                command: "handoff",
+                label: "/handoff",
+                description: gt("Send the next message to a fresh agent that reads this thread"),
               },
             ] as const)
           : []),

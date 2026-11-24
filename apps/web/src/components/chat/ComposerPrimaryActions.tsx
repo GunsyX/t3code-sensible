@@ -8,9 +8,9 @@ import {
 } from "react";
 import { msg, useGT, useMessages } from "gt-react";
 import {
+  ArrowRightFromLineIcon,
   CheckIcon,
   ChevronLeftIcon,
-  Minimize2Icon,
   PlayIcon,
   CornerUpRightIcon,
   ListPlusIcon,
@@ -63,10 +63,14 @@ interface ComposerPrimaryActionsProps {
   onResume?: () => void;
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
-  compactBeforeSendTokens?: number | null;
+  /** Dictation takes the footer, so the Handoff chip steps aside. */
   hideCompactToggle?: boolean;
-  keepFullHistory?: boolean;
-  onToggleKeepFullHistory?: () => void;
+  handoffAvailable?: boolean;
+  handoffDisabled?: boolean;
+  handoffTokens?: number | null;
+  handoffStale?: boolean;
+  handsOffOnSend?: boolean;
+  onToggleHandoff?: () => void;
 }
 
 const formatPendingPrimaryActionLabel = (
@@ -255,10 +259,13 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   onResume,
   onPreviousPendingQuestion,
   onInterrupt,
-  compactBeforeSendTokens = null,
   hideCompactToggle = false,
-  keepFullHistory = false,
-  onToggleKeepFullHistory,
+  handoffAvailable = false,
+  handoffDisabled = false,
+  handoffTokens = null,
+  handoffStale = false,
+  handsOffOnSend = false,
+  onToggleHandoff,
 }: ComposerPrimaryActionsProps) {
   const gt = useGT();
   const m = useMessages();
@@ -365,33 +372,92 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     );
   }
 
+  const showResume = canResume && !hasSendableContent && !isEditingQueuedMessage;
+
+  // Disabled rather than hidden while the agent works, so the send button never shifts.
+  const handoffInPlace = handoffAvailable && !showResume && !isEditingQueuedMessage;
+  const handsOff = handoffInPlace && !handoffDisabled && handsOffOnSend;
+  const showHandoff = handoffInPlace && !hideCompactToggle;
+  const handoffTokenLabel =
+    handoffTokens === null ? null : formatContextWindowTokens(handoffTokens);
+  const withHandoff = (primary: ReactNode) => {
+    if (!showHandoff) {
+      return (
+        <>
+          {children}
+          {primary}
+        </>
+      );
+    }
+    // The count is the old session a handoff skips, not what it sends, so it only shows on Full.
+    const handoffTooltip = handsOff
+      ? handoffTokenLabel !== null
+        ? gt(
+            "Next send starts a fresh agent that reads this thread instead of resuming all {tokens} tokens.",
+            { tokens: handoffTokenLabel },
+          )
+        : gt("Next send starts a fresh agent that reads this thread.")
+      : handoffTokenLabel !== null
+        ? gt("Next send resumes all {tokens} tokens.", { tokens: handoffTokenLabel })
+        : gt("Next send resumes the current session.");
+    const handoffAction = handsOff
+      ? handoffStale
+        ? gt("Click to resume full history")
+        : gt("Click to cancel the handoff")
+      : gt("Click to hand off instead");
+    return (
+      <div data-chat-composer-handoff-send="true" className="flex items-center gap-2">
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                className="flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-(--control-radius) px-2 font-medium text-base text-foreground/80 tabular-nums outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-64 sm:text-sm aria-pressed:bg-accent/60 aria-pressed:text-foreground [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:text-muted-foreground"
+                {...pointerFocusProps}
+                aria-pressed={handsOff}
+                aria-label={handsOff ? gt("Hand off to a fresh agent") : gt("Resume full history")}
+                disabled={!canOperateThread || handoffDisabled}
+                onClick={onToggleHandoff}
+              />
+            }
+          >
+            <ArrowRightFromLineIcon aria-hidden="true" />
+            {handoffStale || handsOff ? (
+              <span className="@max-[480px]/composer-surface:hidden">
+                {handsOff
+                  ? gt("Handoff", { $context: "start a fresh agent that reads this thread" })
+                  : gt("Full", { $context: "resume the full session history" })}
+              </span>
+            ) : null}
+            {handoffStale && !handsOff && handoffTokenLabel !== null ? (
+              <span className="text-muted-foreground">{handoffTokenLabel}</span>
+            ) : null}
+          </TooltipTrigger>
+          <TooltipPopup>
+            <div>{handoffTooltip}</div>
+            <div>{handoffAction}</div>
+          </TooltipPopup>
+        </Tooltip>
+        {children}
+        {primary}
+      </div>
+    );
+  };
+
   if (
     (canInterrupt || stopPhase === "pending" || stopPhase === "timedOut") &&
     !hasSendableContent &&
     !isEditingQueuedMessage
   ) {
-    return (
-      <>
-        {children}
-        {renderStopGenerationButton(false)}
-      </>
-    );
+    return withHandoff(renderStopGenerationButton(false));
   }
-
-  const showResume = canResume && !hasSendableContent && !isEditingQueuedMessage;
-
-  const compactTokens =
-    compactBeforeSendTokens !== null && !showResume && !isEditingQueuedMessage
-      ? formatContextWindowTokens(compactBeforeSendTokens)
-      : null;
-  const compactsBeforeSend = compactTokens !== null && !keepFullHistory;
 
   const submitLabel = showResume
     ? gt("Resume thread")
     : isEditingQueuedMessage
       ? gt("Update queued message")
-      : compactsBeforeSend
-        ? gt("Compact and send")
+      : handsOff
+        ? gt("Hand off and send")
         : isQueuing
           ? gt("Queue message")
           : isRunning
@@ -424,8 +490,8 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         : gt("Click to queue, {modifier}-click to steer", { modifier });
   const submitTooltip =
     submitStatus ??
-    (compactsBeforeSend
-      ? gt("Summarize {tokens} tokens of history, then send", { tokens: compactTokens })
+    (handsOff
+      ? gt("Start a fresh agent that reads this thread, then send")
       : isRunning && !isEditingQueuedMessage && canSteer
         ? dispatchTooltip
         : submitLabel);
@@ -491,54 +557,5 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       <TooltipPopup>{submitTooltip}</TooltipPopup>
     </Tooltip>
   );
-  if (compactTokens === null || hideCompactToggle) {
-    return withStopButton(
-      <>
-        {children}
-        {submit}
-      </>,
-    );
-  }
-
-  return withStopButton(
-    <div data-chat-composer-compact-send="true" className="flex items-center gap-2">
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <button
-              type="button"
-              className="flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-(--control-radius) px-2 font-medium text-base text-foreground/80 tabular-nums outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-64 sm:text-sm aria-pressed:bg-accent/60 aria-pressed:text-foreground [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:text-muted-foreground"
-              {...pointerFocusProps}
-              aria-pressed={!keepFullHistory}
-              aria-label={gt("Compact {tokens} tokens of history before sending", {
-                tokens: compactTokens,
-              })}
-              disabled={!canOperateThread}
-              onClick={onToggleKeepFullHistory}
-            />
-          }
-        >
-          <Minimize2Icon aria-hidden="true" />
-          <span className="@max-[480px]/composer-surface:hidden">
-            {keepFullHistory
-              ? gt("Keep", { $context: "keep full history instead of compacting" })
-              : gt("Compact", { $context: "verb, compact history before sending" })}
-          </span>
-          <span className="text-muted-foreground">{compactTokens}</span>
-        </TooltipTrigger>
-        <TooltipPopup>
-          <div>
-            {keepFullHistory
-              ? gt("Next send keeps all {tokens} tokens.", { tokens: compactTokens })
-              : gt("Next send compacts {tokens} tokens first.", { tokens: compactTokens })}
-          </div>
-          <div>
-            {keepFullHistory ? gt("Click to compact first") : gt("Click to keep full history")}
-          </div>
-        </TooltipPopup>
-      </Tooltip>
-      {children}
-      {submit}
-    </div>,
-  );
+  return withStopButton(withHandoff(submit));
 });

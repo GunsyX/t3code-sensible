@@ -91,16 +91,10 @@ const readyProvider = (
   checkedAt: "2026-03-17T19:12:28.000Z",
   models: models.map((model) => ({ ...model, isCustom: false, capabilities: null })),
 });
-export const CODEX_PROVIDER = readyProvider(CODEX, "codex", [
+const CODEX_PROVIDER = readyProvider(CODEX, "codex", [
   { slug: "gpt-5.4", name: "GPT-5.4" },
   { slug: "gpt-5.5", name: "GPT-5.5" },
 ]);
-export const CLAUDE_PROVIDER = {
-  ...readyProvider("claudeAgent", "claudeAgent", [
-    { slug: "claude-opus-4-6", name: "Claude Opus 4.6" },
-  ]),
-  slashCommands: [{ name: "compact" }],
-};
 
 const decodeServerConfig = Schema.decodeUnknownSync(ServerConfig);
 const makeServerConfig = (

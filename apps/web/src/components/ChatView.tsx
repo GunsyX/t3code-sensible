@@ -77,12 +77,10 @@ import {
   type MessageId,
   type ModelSelection,
   type PreviewAnnotationPayload,
-  ProviderInstanceId,
   type ServerProvider,
   type ScopedThreadRef,
   type ThreadId,
   ProviderInteractionMode,
-  resolveIdleCompaction,
   RuntimeMode,
 } from "@t3tools/contracts";
 import {
@@ -123,7 +121,11 @@ import {
   scopeProjectRef,
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
-import { formatModelSlugName, resolveSelectableModel } from "@t3tools/shared/model";
+import {
+  formatModelSlugName,
+  modelSelectionsEqual,
+  resolveSelectableModel,
+} from "@t3tools/shared/model";
 import { projectScriptCwd, resolveProjectScripts } from "@t3tools/shared/projectScripts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { orchestrationV2WorktreePending } from "@t3tools/shared/orchestrationV2ThreadError";
@@ -350,7 +352,6 @@ import { resolveThreadSyncPhase } from "../threadSync";
 import { hasAvailableCompactionProvider } from "./chat/compaction.logic";
 import {
   deriveLatestContextWindowSnapshot,
-  hasDismissedResumeCompaction,
   latestProviderTurnTokenUsage,
   shouldOfferResumeCompaction,
 } from "@t3tools/client-runtime/state/context-window";
@@ -1735,30 +1736,6 @@ export default function ChatView(props: ChatViewProps) {
       ? (activeRuntime?.providerInstanceId ?? activeThread?.modelSelection.instanceId ?? null)
       : null,
   });
-  const [resumeCompactionPermanentlyDismissed, setResumeCompactionPermanentlyDismissed] =
-    useLocalStorage(
-      `t3code:resume-compaction-dismissed:${environmentId}:${activeProviderInstanceId ?? "claudeAgent"}`,
-      false,
-      Schema.Boolean,
-    );
-  const nativeResumeCompactionDismissed = hasDismissedResumeCompaction(
-    (serverProjection?.runtimeRequests ?? [])
-      .filter((request) => request.kind === "user_input" && request.status === "resolved")
-      .map((request) => ({
-        kind: "user-input.resolved",
-        payload: { answers: request.answers },
-      })),
-  );
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- persists the server-reported resume compaction dismissal to localStorage
-  useEffect(() => {
-    if (nativeResumeCompactionDismissed && !resumeCompactionPermanentlyDismissed) {
-      setResumeCompactionPermanentlyDismissed(true);
-    }
-  }, [
-    nativeResumeCompactionDismissed,
-    resumeCompactionPermanentlyDismissed,
-    setResumeCompactionPermanentlyDismissed,
-  ]);
   const [dismissedFallbackWindow, setDismissedFallbackWindow] = useLocalStorage(
     `t3code:fallback-notice-dismissed:${environmentId}`,
     null,
@@ -2558,48 +2535,67 @@ export default function ChatView(props: ChatViewProps) {
     activeMessageCount > 0 && serverConfig?.environment.capabilities.freshContext === true;
   const freshSessionArmed = useFreshSessionArmed(routeThreadKey);
   const freshSessionPending = freshSessionAvailable && freshSessionArmed;
-  // The context window is the current conversation's, so neither a handoff destination nor
-  // the fresh session armed by /clear inherits it.
-  const resumeCompactionTokens =
-    activeContextWindow &&
-    pendingHandoff === null &&
+  // `/clear` already drops the old context, so an armed fresh session never hands off too.
+  const handoffShown =
+    serverConfig?.environment.capabilities.freshHandoff === true &&
+    canOperateThread &&
+    activeThread !== undefined &&
+    activeThreadHasCompactableConversation &&
+    isServerThread &&
+    multipleModelSelections === null;
+  const handoffAvailable =
+    handoffShown &&
     !freshSessionPending &&
-    resolveIdleCompaction(
-      settings,
-      activeProviderInstanceId ?? ProviderInstanceId.make("claudeAgent"),
-    ) !== "off" &&
-    !resumeCompactionPermanentlyDismissed &&
-    !nativeResumeCompactionDismissed &&
-    !compactDisabled &&
-    !hasHeldQueuedRuns &&
-    multipleModelSelections === null &&
+    !isWorking &&
+    !isRevertingCheckpoint &&
+    !threadDetailLoading &&
+    !isPreparingWorktree &&
+    !activeEnvironmentUnavailable &&
+    pendingApprovals.length === 0 &&
+    pendingUserInputs.length === 0 &&
+    !hasHeldQueuedRuns;
+  const handoffTokens = handoffAvailable ? (activeContextWindow?.usedTokens ?? null) : null;
+  const handoffStale =
+    handoffAvailable &&
+    activeContextWindow !== null &&
     shouldOfferResumeCompaction({
       provider: selectedProvider,
       usedTokens: activeContextWindow.usedTokens,
       updatedAt: activeContextWindow.updatedAt,
       promptCacheTtlMs: activeThreadLiveTokenUsage?.promptCacheTtlMs,
       now: `${nowMinute}:00.000Z`,
-    })
-      ? activeContextWindow.usedTokens
-      : null;
-  const [fullHistoryThreadKeys, setFullHistoryThreadKeys] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
-  const keepFullHistory = fullHistoryThreadKeys.has(routeThreadKey);
-  const setKeepFullHistory = (threadKey: string, keep: boolean) => {
-    setFullHistoryThreadKeys((current) => {
-      if (current.has(threadKey) === keep) return current;
-      const next = new Set(current);
-      if (keep) next.add(threadKey);
-      else next.delete(threadKey);
+    });
+  // A new model or provider would re-read the whole history anyway, so it hands off too.
+  const lastRunModelSelection = serverProjection?.runs.findLast(
+    (run) => run.startedAt !== null,
+  )?.modelSelection;
+  const handoffByDefault =
+    handoffStale ||
+    (composerSelectedModelSelection !== null &&
+      lastRunModelSelection !== undefined &&
+      !modelSelectionsEqual(composerSelectedModelSelection, lastRunModelSelection));
+  // Unset follows the default: stale or switching hands off, a warm same-model send resumes.
+  const [handoffChoiceByThreadKey, setHandoffChoiceByThreadKey] = useState<
+    ReadonlyMap<string, boolean>
+  >(() => new Map());
+  const handsOffOnSend =
+    handoffAvailable && (handoffChoiceByThreadKey.get(routeThreadKey) ?? handoffByDefault);
+  const setHandoffChoice = (threadKey: string, handOff: boolean | null) => {
+    setHandoffChoiceByThreadKey((current) => {
+      if ((current.get(threadKey) ?? null) === handOff) return current;
+      const next = new Map(current);
+      if (handOff === null) next.delete(threadKey);
+      else next.set(threadKey, handOff);
       return next;
     });
   };
   // While a question or approval owns the composer, its text answers that, not the agent.
   const freshSessionCommandAvailable =
     freshSessionAvailable && activePendingApproval === null && pendingUserInputs.length === 0;
-  const toggleKeepFullHistory = () => setKeepFullHistory(routeThreadKey, !keepFullHistory);
-  const toggleKeepFullHistoryStable = useStableCallback(toggleKeepFullHistory);
+  const toggleHandoffStable = useStableCallback(() =>
+    setHandoffChoice(routeThreadKey, !handsOffOnSend),
+  );
+  const clearHandoffChoice = (threadKey: string) => setHandoffChoice(threadKey, null);
   const armFreshSessionStable = useStableCallback(() => armFreshSession(routeThreadKey));
   const handleRestoreThreadBranch = () => {
     if (!canWriteSourceControl) return;
@@ -3024,9 +3020,8 @@ export default function ChatView(props: ChatViewProps) {
     isDraftHeroState,
     panelAnimationsActive,
     panelAnimationDurationMs,
-    keepFullHistory,
+    handsOffOnSend,
     freshSessionAvailable: freshSessionCommandAvailable,
-    resumeCompactionTokens,
     usageLimitsKey,
     usageLimitsOffered,
     openUsageLimits,
@@ -3053,7 +3048,7 @@ export default function ChatView(props: ChatViewProps) {
     },
     setFeedbackSubmissionsByThreadKey,
     setThreadError,
-    setKeepFullHistory,
+    clearHandoffChoice,
     anchorNewTurn,
     acknowledgeActiveThreadWoke,
     onSideChat: sideChat.available ? sendSideChatStable : undefined,
@@ -3760,9 +3755,12 @@ export default function ChatView(props: ChatViewProps) {
                                     ? EMPTY_COMPOSER_BANNER_ITEMS
                                     : composerBannerItems
                                 }
-                                resumeCompactionTokens={resumeCompactionTokens}
-                                keepFullHistory={keepFullHistory}
-                                onToggleKeepFullHistory={toggleKeepFullHistoryStable}
+                                handoffAvailable={handoffShown}
+                                handoffDisabled={!handoffAvailable}
+                                handoffTokens={handoffTokens}
+                                handoffStale={handoffStale}
+                                handsOffOnSend={handsOffOnSend}
+                                onToggleHandoff={toggleHandoffStable}
                                 sideChatAvailable={sideChat.available}
                                 sideChatDisabledReason={sideChatDisabledReason}
                                 onFreshSession={

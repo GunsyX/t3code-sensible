@@ -1408,8 +1408,7 @@ export function planComposerTurn(input: {
   readonly activeThreadBranch: string | null;
   /** The server launches a No project worktree request at its root, so it needs no base. */
   readonly isScratchProject: boolean;
-  readonly resumeCompactionTokens: number | null;
-  readonly keepFullHistory: boolean;
+  readonly handsOffOnSend: boolean;
   readonly phase: SessionPhase;
   readonly dispatchMode: ComposerDispatchMode;
   /** The turn starts a new provider session, so it neither compacts first nor steers. */
@@ -1419,13 +1418,14 @@ export function planComposerTurn(input: {
     !input.sendQueuesBehindSetup && (!input.isServerThread || input.activeMessageCount === 0);
   const shouldCreateWorktree =
     isFirstMessage && input.sendEnvMode === "worktree" && !input.worktreePath;
-  // A stale Claude session compacts before this message so the turn does not re-read the
-  // old history. The message queues behind the /compact run, since steering into it is
-  // rejected.
-  const compactBeforeSend =
+  // A handoff starts a fresh provider session that reads this thread instead of resuming it.
+  // A fresh-context send already drops the old context, so it never hands off as well.
+  const freshHandoff =
     !input.freshContext &&
-    input.resumeCompactionTokens !== null &&
-    !input.keepFullHistory &&
+    input.handsOffOnSend &&
+    input.isServerThread &&
+    input.activeMessageCount > 0 &&
+    input.phase !== "running" &&
     !COMPACT_COMMAND_PATTERN.test(input.messageText);
   const dispatchMode =
     input.freshContext && (input.dispatchMode === "steer" || input.dispatchMode === "restart")
@@ -1437,15 +1437,11 @@ export function planComposerTurn(input: {
     missingWorktreeBaseBranch:
       shouldCreateWorktree && !input.activeThreadBranch && !input.isScratchProject,
     baseBranchForWorktree: shouldCreateWorktree ? input.activeThreadBranch : null,
-    compactBeforeSend,
+    freshHandoff,
     turnDispatchMode:
-      compactBeforeSend || (input.sendQueuesBehindSetup && dispatchMode !== "steer")
-        ? ("queue" as const)
-        : dispatchMode,
+      input.sendQueuesBehindSetup && dispatchMode !== "steer" ? ("queue" as const) : dispatchMode,
     shouldQueueBehindActiveRun:
-      compactBeforeSend ||
-      input.sendQueuesBehindSetup ||
-      (input.phase === "running" && dispatchMode === "queue"),
+      input.sendQueuesBehindSetup || (input.phase === "running" && dispatchMode === "queue"),
   };
 }
 
